@@ -1,0 +1,82 @@
+ib:
+  host: "ib-gateway"
+  trading_mode: paper           # "paper" (port 4002) or "live" (port 4001)
+  client_id: 1
+  timeout: 30
+
+strategy:
+  watchlist:
+    # Major index ETFs
+    - SPY
+    - QQQ
+    - IWM
+    - DIA
+    # Sector ETFs
+    - XLF
+    - XLE
+    - XLK
+    - XLV
+    - XBI
+    - GDX
+    - SMH
+    # Fixed income / volatility ETFs
+    - TLT
+    - HYG
+    # Mega-cap tech
+    - AAPL
+    - MSFT
+    - AMZN
+    - GOOGL
+    - META
+    - NVDA
+    - TSLA
+    # Other high-liquidity names
+    - JPM
+    - BAC
+    - AMD
+    - NFLX
+    - DIS
+    - BA
+    - XOM
+    - WMT
+  dte_min: 14
+  dte_max: 45
+  delta_long_min: 0.30
+  delta_long_max: 0.50
+  delta_short_min: 0.15
+  delta_short_max: 0.30
+  spread_width: 5.0
+  min_open_interest: 200
+  max_bid_ask_spread_pct: 0.10
+  scan_interval_minutes: 5
+  exit_check_interval_minutes: 1
+
+indicators:
+  rsi_period: 14
+  rsi_overbought: 70
+  rsi_oversold: 30
+  sma_fast: 20
+  sma_slow: 50
+  bb_period: 20
+  bb_std: 2.0
+
+risk:
+  max_risk_per_trade_pct: 0.02
+  max_concurrent_positions: 10
+  max_positions_per_symbol: 3
+  daily_loss_limit_pct: 0.03
+  monthly_loss_limit_pct: 0.08
+  profit_target_pct: 0.50
+  dte_exit_threshold: 21
+  stop_loss_pct: 1.0
+
+schedule:
+  market_open: "09:30"
+  market_close: "16:00"
+  timezone: "US/Eastern"
+  entry_start_offset_minutes: 15
+  entry_stop_offset_minutes: 30
+
+logging:
+  level: "INFO"
+  trade_journal: "/app/data/trades.csv"

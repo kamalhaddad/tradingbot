@@ -1,0 +1,38 @@
+services:
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:latest
+    environment:
+      TWS_USERID: ${IB_USERNAME}
+      TWS_PASSWORD: ${IB_PASSWORD}
+      TRADING_MODE: paper
+      TWOFA_TIMEOUT_ACTION: restart
+    ports:
+      - "127.0.0.1:5900:5900"   # VNC - SSH tunnel only
+    networks:
+      - ib-net
+    restart: always
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "4002"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  trading-bot:
+    build: .
+    depends_on:
+      ib-gateway:
+        condition: service_healthy
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - ib-net
+    restart: always
+    stop_grace_period: 30s
+
+networks:
+  ib-net:
+    driver: bridge
+    internal: true
