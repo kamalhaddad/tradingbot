@@ -33,6 +33,11 @@ class StrategyConfig(BaseModel):
     max_bid_ask_spread_pct: float = 0.10
     scan_interval_minutes: int = 5
     exit_check_interval_minutes: int = 1
+    iv_rank_high_threshold: float = 0.50   # IV rank above this → high-IV strategies (iron condor, butterfly)
+    iv_rank_low_threshold: float = 0.25    # IV rank below this → low-IV strategies (calendar)
+    calendar_dte_near: int = 14            # Target DTE for the short leg of a calendar spread
+    calendar_dte_far: int = 45             # Target DTE for the long leg of a calendar spread
+    butterfly_wing_width: float = 5.0     # Distance (in $) from body to each wing in butterfly spreads
 
 
 class IndicatorsConfig(BaseModel):

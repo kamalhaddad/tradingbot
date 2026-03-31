@@ -50,6 +50,11 @@ strategy:
   max_bid_ask_spread_pct: 0.10
   scan_interval_minutes: 5
   exit_check_interval_minutes: 1
+  iv_rank_high_threshold: 0.50   # IV rank above this uses iron condor (neutral) or butterfly (directional)
+  iv_rank_low_threshold: 0.25    # IV rank below this uses calendar spreads
+  calendar_dte_near: 14          # Near leg DTE for calendar spreads
+  calendar_dte_far: 45           # Far leg DTE for calendar spreads
+  butterfly_wing_width: 5.0      # Wing width ($) for butterfly / broken-wing butterfly
 
 indicators:
   rsi_period: 14

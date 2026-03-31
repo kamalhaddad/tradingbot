@@ -6,7 +6,9 @@ from datetime import datetime
 
 from ib_async import IB, Contract, LimitOrder, Trade
 
-from src.models import OrderStatus, SpreadCandidate, TradeRecord
+from src.models import OrderStatus, SpreadCandidate, SpreadType, TradeRecord
+
+_CREDIT_TYPES = {SpreadType.IRON_CONDOR}
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +31,18 @@ class OrderManager:
             logger.warning("Cannot place order with 0 contracts")
             return None
 
-        # Limit price is the net debit (positive for debit spreads)
-        limit_price = round(candidate.net_debit, 2)
+        # Credit strategies (e.g. iron condor) are opened by selling the combo.
+        # Debit strategies are opened by buying the combo.
+        is_credit = candidate.spread_type in _CREDIT_TYPES
+        if is_credit:
+            order_action = "SELL"
+            limit_price = round(-candidate.net_debit, 2)  # net_debit is negative; flip to positive credit
+        else:
+            order_action = "BUY"
+            limit_price = round(candidate.net_debit, 2)
 
         order = LimitOrder(
-            action="BUY",
+            action=order_action,
             totalQuantity=contracts,
             lmtPrice=limit_price,
         )
@@ -45,6 +54,7 @@ class OrderManager:
             spread_type=candidate.spread_type,
             long_leg=candidate.long_leg,
             short_leg=candidate.short_leg,
+            extra_legs=list(candidate.extra_legs),
             contracts=contracts,
             entry_price=candidate.net_debit,
             entry_time=datetime.now(),
@@ -82,9 +92,14 @@ class OrderManager:
     async def close_position(
         self, trade: TradeRecord, contract: Contract
     ) -> Trade | None:
-        """Close an open spread position by selling the combo."""
+        """Close an open spread position.
+
+        Credit strategies (opened by selling) are closed by buying back.
+        Debit strategies (opened by buying) are closed by selling.
+        """
+        close_action = "BUY" if trade.spread_type in _CREDIT_TYPES else "SELL"
         order = LimitOrder(
-            action="SELL",
+            action=close_action,
             totalQuantity=trade.contracts,
             lmtPrice=0.0,  # Will be updated with market price
         )

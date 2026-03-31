@@ -15,6 +15,10 @@ class Signal(Enum):
 class SpreadType(Enum):
     BULL_CALL = "bull_call"
     BEAR_PUT = "bear_put"
+    IRON_CONDOR = "iron_condor"
+    BUTTERFLY = "butterfly"
+    BROKEN_WING_BUTTERFLY = "broken_wing_butterfly"
+    CALENDAR = "calendar"
 
 
 class OrderStatus(Enum):
@@ -32,6 +36,7 @@ class OptionLeg:
     strike: float
     right: str               # "C" or "P"
     action: str              # "BUY" or "SELL"
+    ratio: int = 1           # contract ratio (e.g. 2 for butterfly body)
     delta: Optional[float] = None
     open_interest: Optional[int] = None
     bid: Optional[float] = None
@@ -52,9 +57,14 @@ class SpreadCandidate:
     short_leg: OptionLeg
     max_profit: float        # credit or debit spread max profit
     max_loss: float          # max loss per contract (always positive)
-    net_debit: float         # net cost to enter (positive = debit)
+    net_debit: float         # net cost to enter (positive = debit, negative = credit)
     dte: int                 # days to expiration
     signal: Signal
+    extra_legs: list["OptionLeg"] = field(default_factory=list)  # 3rd/4th legs for multi-leg strategies
+
+    @property
+    def all_legs(self) -> list["OptionLeg"]:
+        return [self.long_leg, self.short_leg] + self.extra_legs
 
     @property
     def risk_reward_ratio(self) -> float:
@@ -81,6 +91,7 @@ class TradeRecord:
     pnl: Optional[float] = None
     status: OrderStatus = OrderStatus.PENDING
     order_id: Optional[int] = None
+    extra_legs: list["OptionLeg"] = field(default_factory=list)
 
     @property
     def is_open(self) -> bool:

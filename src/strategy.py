@@ -1,13 +1,13 @@
-"""Vertical spread signal generation and entry/exit orchestration."""
+"""Signal generation and entry/exit orchestration."""
 
 import logging
 
 from ib_async import IB
 
 from src.config_loader import AppConfig
-from src.indicators import generate_signal
+from src.indicators import compute_iv_rank, generate_signal
 from src.market_data import MarketData
-from src.models import IndicatorResult, Signal, SpreadCandidate
+from src.models import SpreadCandidate
 from src.spread_builder import SpreadBuilder
 
 logger = logging.getLogger(__name__)
@@ -29,49 +29,44 @@ class Strategy:
         self.spread_builder = spread_builder
 
     async def scan_symbol(self, symbol: str) -> SpreadCandidate | None:
-        """Scan a single symbol for trading opportunities.
-
-        Returns a SpreadCandidate if a valid signal and spread are found.
-        """
+        """Scan a single symbol for trading opportunities."""
         try:
-            # Get stock contract and historical data
             contract = await self.market_data.get_stock_contract(symbol)
             df = await self.market_data.get_historical_bars(contract)
 
             if df.empty or len(df) < self.config.indicators.sma_slow:
-                logger.debug(
-                    "Insufficient data for %s (%d bars)", symbol, len(df)
-                )
+                logger.debug("Insufficient data for %s (%d bars)", symbol, len(df))
                 return None
 
-            # Compute indicators and generate signal
             result = generate_signal(df, self.config.indicators)
             result.symbol = symbol
 
+            # IV rank drives strategy selection (non-critical — falls back to None on error)
+            iv_rank = await self._get_iv_rank(symbol, contract)
+
             logger.info(
-                "%s: price=%.2f rsi=%.1f sma_fast=%.2f sma_slow=%.2f signal=%s",
+                "%s: price=%.2f rsi=%.1f signal=%s iv_rank=%s",
                 symbol,
                 result.price,
                 result.rsi or 0,
-                result.sma_fast or 0,
-                result.sma_slow or 0,
                 result.signal.value,
+                f"{iv_rank:.0%}" if iv_rank is not None else "N/A",
             )
 
-            if result.signal == Signal.NEUTRAL:
-                return None
-
-            # Find a spread matching the signal
             candidate = await self.spread_builder.find_spread(
-                symbol, result.signal, result.price
+                symbol, result.signal, result.price, iv_rank=iv_rank
             )
+
             if candidate:
+                leg_summary = ", ".join(
+                    f"{l.right}{l.strike:.0f}{'×'+str(l.ratio) if l.ratio != 1 else ''}"
+                    for l in candidate.all_legs
+                )
                 logger.info(
-                    "Spread found for %s: %s %s/%s DTE=%d max_profit=%.0f max_loss=%.0f",
+                    "Spread found for %s: %s [%s] DTE=%d max_profit=%.0f max_loss=%.0f",
                     symbol,
                     candidate.spread_type.value,
-                    candidate.long_leg.strike,
-                    candidate.short_leg.strike,
+                    leg_summary,
                     candidate.dte,
                     candidate.max_profit,
                     candidate.max_loss,
@@ -90,3 +85,15 @@ class Strategy:
             if candidate:
                 candidates.append(candidate)
         return candidates
+
+    async def _get_iv_rank(self, symbol: str, contract) -> float | None:
+        """Fetch one-year historical IV and return IV rank in [0, 1]."""
+        try:
+            iv_series = await self.market_data.get_historical_iv(contract)
+            if len(iv_series) < 30:
+                return None
+            iv_rank, _ = compute_iv_rank(iv_series)
+            return iv_rank
+        except Exception as e:
+            logger.debug("Could not fetch IV rank for %s: %s", symbol, e)
+            return None

@@ -9,7 +9,7 @@ from pathlib import Path
 from src.config_loader import load_config
 from src.connection import IBConnection
 from src.market_data import MarketData
-from src.models import OrderStatus
+from src.models import OrderStatus, Signal
 from src.notifier import Notifier
 from src.order_manager import OrderManager
 from src.portfolio import Portfolio
@@ -188,7 +188,7 @@ class TradingBot:
                         "Exit triggered for %s (%s): %s",
                         trade.symbol, trade.trade_id, reason,
                     )
-                    # Build close contract
+                    # Build close contract (reconstruct SpreadCandidate from trade record)
                     from src.models import SpreadCandidate
                     bag = await spread_builder.build_qualified_bag(
                         SpreadCandidate(
@@ -196,11 +196,12 @@ class TradingBot:
                             spread_type=trade.spread_type,
                             long_leg=trade.long_leg,
                             short_leg=trade.short_leg,
+                            extra_legs=list(trade.extra_legs),
                             max_profit=trade.max_profit,
                             max_loss=trade.max_loss,
                             net_debit=trade.entry_price,
                             dte=0,
-                            signal=trade.spread_type,
+                            signal=Signal.NEUTRAL,
                         )
                     )
                     if bag:

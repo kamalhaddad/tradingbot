@@ -120,6 +120,27 @@ class MarketData:
 
         return results
 
+    async def get_historical_iv(
+        self,
+        contract: Contract,
+        duration: str = "1 Y",
+    ) -> pd.Series:
+        """Fetch historical implied volatility as a daily time series."""
+        bars = await self.ib.reqHistoricalDataAsync(
+            contract,
+            endDateTime="",
+            durationStr=duration,
+            barSizeSetting="1 day",
+            whatToShow="OPTION_IMPLIED_VOLATILITY",
+            useRTH=True,
+            formatDate=1,
+        )
+        if not bars:
+            return pd.Series(dtype=float)
+        df = util.df(bars)
+        df["date"] = pd.to_datetime(df["date"])
+        return pd.Series(df["close"].values, index=df["date"])
+
     async def get_account_value(self) -> float:
         """Get net liquidation value of the account."""
         account_values = self.ib.accountValues()

@@ -33,6 +33,29 @@ def compute_bollinger_bands(
     return upper, middle, lower
 
 
+def compute_iv_rank(iv_series: pd.Series) -> tuple[float, float]:
+    """Compute IV Rank and IV Percentile from a historical IV series.
+
+    IV Rank   = (current_IV - 52w_low) / (52w_high - 52w_low)  → range [0, 1]
+    IV Pctile = fraction of historical days with lower IV than today → range [0, 1]
+
+    Returns (iv_rank, iv_percentile). Falls back to (0.5, 0.5) on insufficient data.
+    """
+    if len(iv_series) < 2:
+        return 0.5, 0.5
+
+    current = float(iv_series.iloc[-1])
+    iv_min = float(iv_series.min())
+    iv_max = float(iv_series.max())
+
+    if iv_max == iv_min:
+        return 0.5, 0.5
+
+    iv_rank = (current - iv_min) / (iv_max - iv_min)
+    iv_percentile = float((iv_series < current).mean())
+    return iv_rank, iv_percentile
+
+
 def generate_signal(
     df: pd.DataFrame, config: IndicatorsConfig
 ) -> IndicatorResult:
