@@ -14,7 +14,7 @@ services:
       - ib-wan        # gateway needs internet to reach IB servers
     restart: always
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "4004"]  # socat relay port (paper=4004, live=4003)
+      test: ["CMD-SHELL", "echo > /dev/tcp/localhost/4004"]  # nc not available; bash tcp check
       interval: 10s
       timeout: 5s
       retries: 30
