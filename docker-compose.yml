@@ -6,6 +6,7 @@ services:
       TWS_PASSWORD: ${IB_PASSWORD}
       TRADING_MODE: paper
       TWOFA_TIMEOUT_ACTION: restart
+      TWS_ACCEPT_INCOMING: "accept"
     ports:
       - "127.0.0.1:5900:5900"   # VNC - SSH tunnel only
     networks:
@@ -13,7 +14,7 @@ services:
       - ib-wan        # gateway needs internet to reach IB servers
     restart: always
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "4002"]
+      test: ["CMD", "nc", "-z", "localhost", "4004"]  # socat relay port (paper=4004, live=4003)
       interval: 10s
       timeout: 5s
       retries: 30

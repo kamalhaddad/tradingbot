@@ -17,7 +17,8 @@ class IBConfig(BaseModel):
 
     @property
     def port(self) -> int:
-        return 4002 if self.trading_mode == "paper" else 4001
+        # gnzsnz/ib-gateway uses socat to relay: paper=4004, live=4003
+        return 4004 if self.trading_mode == "paper" else 4003
 
 
 class StrategyConfig(BaseModel):
