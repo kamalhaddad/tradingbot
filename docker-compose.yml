@@ -10,6 +10,7 @@ services:
       - "127.0.0.1:5900:5900"   # VNC - SSH tunnel only
     networks:
       - ib-net
+      - ib-wan        # gateway needs internet to reach IB servers
     restart: always
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "4002"]
@@ -35,4 +36,6 @@ services:
 networks:
   ib-net:
     driver: bridge
-    internal: true
+    internal: true     # bot ↔ gateway only, no internet
+  ib-wan:
+    driver: bridge     # gateway → IB servers (outbound internet)
