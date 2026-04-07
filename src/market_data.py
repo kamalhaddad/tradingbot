@@ -84,7 +84,7 @@ class MarketData:
             for strike in strikes
         ]
         qualified = await self.ib.qualifyContractsAsync(*contracts)
-        return [c for c in qualified if c.conId > 0]
+        return [c for c in qualified if c is not None and c.conId > 0]
 
     async def get_option_greeks(
         self, contracts: list[Option]
