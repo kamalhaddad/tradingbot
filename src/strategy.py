@@ -81,6 +81,9 @@ class Strategy:
         """Scan all watchlist symbols for trading opportunities."""
         candidates = []
         for symbol in self.config.strategy.watchlist:
+            if not self.ib.isConnected():
+                logger.warning("Lost connection during scan, aborting remaining symbols")
+                break
             candidate = await self.scan_symbol(symbol)
             if candidate:
                 candidates.append(candidate)

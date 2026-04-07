@@ -56,8 +56,8 @@ class TradingBot:
             loop.add_signal_handler(sig, self._handle_shutdown)
 
         # Connect to IB Gateway
-        conn = IBConnection(self.config.ib)
-        ib = await conn.connect()
+        self.conn = IBConnection(self.config.ib)
+        ib = await self.conn.connect()
 
         # Wire components
         market_data = MarketData(ib, self.config.strategy)
@@ -79,7 +79,7 @@ class TradingBot:
             )
         finally:
             logger.info("Shutting down...")
-            await conn.disconnect()
+            await self.conn.disconnect()
             logger.info("Bot stopped.")
 
     async def _main_loop(
@@ -95,6 +95,24 @@ class TradingBot:
 
         while not self._shutdown.is_set():
             now = asyncio.get_event_loop().time()
+
+            # Ensure we're connected before doing any work
+            if not ib.isConnected():
+                logger.warning("Not connected to IB Gateway, attempting reconnect...")
+                try:
+                    await self.conn.connect()
+                    logger.info("Reconnected successfully")
+                except ConnectionError:
+                    logger.error("Reconnect failed, will retry next cycle")
+                    # Wait before retrying to avoid tight loop
+                    try:
+                        await asyncio.wait_for(
+                            self._shutdown.wait(), timeout=30,
+                        )
+                        break
+                    except asyncio.TimeoutError:
+                        pass
+                    continue
 
             # Exit check (runs during market hours, every exit_interval)
             if scheduler.is_market_open() and (now - last_exit_check) >= exit_interval:

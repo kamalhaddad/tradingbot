@@ -18,9 +18,13 @@ class IBConnection:
         self.ib = IB()
         self._max_retries = 10
         self._base_delay = 5
+        self._reconnecting = False
 
     async def connect(self) -> IB:
         """Connect to IB Gateway with exponential backoff retry."""
+        # Ensure any stale connection state is cleared before connecting
+        if self.ib.isConnected():
+            self.ib.disconnect()
         for attempt in range(1, self._max_retries + 1):
             try:
                 await self.ib.connectAsync(
@@ -54,16 +58,28 @@ class IBConnection:
 
     def _on_disconnect(self):
         """Handle unexpected disconnection by scheduling reconnect."""
+        if self._reconnecting:
+            logger.debug("Reconnect already in progress, skipping duplicate")
+            return
         logger.warning("Disconnected from IB Gateway, scheduling reconnect...")
         asyncio.ensure_future(self._reconnect())
 
     async def _reconnect(self):
         """Attempt to reconnect after disconnection."""
-        await asyncio.sleep(self._base_delay)
+        if self._reconnecting:
+            return
+        self._reconnecting = True
         try:
+            # Wait for the gateway to fully release the old client session
+            logger.info("Waiting 10s for gateway to release old session...")
+            await asyncio.sleep(10)
+            # Remove handler before reconnect to avoid re-entry during connect attempts
+            self.ib.disconnectedEvent -= self._on_disconnect
             await self.connect()
         except ConnectionError:
             logger.error("Reconnection failed after all retries")
+        finally:
+            self._reconnecting = False
 
     async def disconnect(self):
         """Gracefully disconnect from IB Gateway."""
