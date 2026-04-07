@@ -74,6 +74,7 @@ class SpreadBuilder:
             logger.warning("No option chains found for %s", symbol)
             return None
 
+        chain_strikes = self._get_chain_strikes(chains)
         expiries = self._filter_expiries(chains)
         if not expiries:
             logger.warning("No expiries in DTE range for %s", symbol)
@@ -82,7 +83,8 @@ class SpreadBuilder:
         expiries.sort(key=lambda e: abs(self._calc_dte(e) - 30))
         for expiry in expiries:
             candidate = await self._build_vertical_for_expiry(
-                symbol, expiry, right, spread_type, signal, price
+                symbol, expiry, right, spread_type, signal, price,
+                chain_strikes=chain_strikes,
             )
             if candidate:
                 return candidate
@@ -98,8 +100,9 @@ class SpreadBuilder:
         spread_type: SpreadType,
         signal: Signal,
         price: float,
+        chain_strikes: set[float] | None = None,
     ) -> SpreadCandidate | None:
-        strike_range = self._get_strike_range(price, self.config.spread_width)
+        strike_range = self._get_strike_range(price, self.config.spread_width, chain_strikes)
         contracts = await self.market_data.get_option_chain_data(symbol, expiry, right, strike_range)
         if len(contracts) < 2:
             return None
@@ -204,9 +207,12 @@ class SpreadBuilder:
         if not expiries:
             return None
 
+        chain_strikes = self._get_chain_strikes(chains)
         expiries.sort(key=lambda e: abs(self._calc_dte(e) - 30))
         for expiry in expiries:
-            candidate = await self._build_iron_condor_for_expiry(symbol, expiry, price)
+            candidate = await self._build_iron_condor_for_expiry(
+                symbol, expiry, price, chain_strikes=chain_strikes,
+            )
             if candidate:
                 return candidate
 
@@ -214,9 +220,10 @@ class SpreadBuilder:
         return None
 
     async def _build_iron_condor_for_expiry(
-        self, symbol: str, expiry: str, price: float
+        self, symbol: str, expiry: str, price: float,
+        chain_strikes: set[float] | None = None,
     ) -> SpreadCandidate | None:
-        strike_range = self._get_strike_range(price, self.config.spread_width)
+        strike_range = self._get_strike_range(price, self.config.spread_width, chain_strikes)
 
         put_contracts = await self.market_data.get_option_chain_data(symbol, expiry, "P", strike_range)
         call_contracts = await self.market_data.get_option_chain_data(symbol, expiry, "C", strike_range)
@@ -350,10 +357,12 @@ class SpreadBuilder:
             return None
 
         right = "C" if signal == Signal.BULLISH else "P"
+        chain_strikes = self._get_chain_strikes(chains)
         expiries.sort(key=lambda e: abs(self._calc_dte(e) - 30))
         for expiry in expiries:
             candidate = await self._build_butterfly_for_expiry(
-                symbol, expiry, right, signal, price, broken_wing=broken_wing
+                symbol, expiry, right, signal, price, broken_wing=broken_wing,
+                chain_strikes=chain_strikes,
             )
             if candidate:
                 return candidate
@@ -376,11 +385,12 @@ class SpreadBuilder:
         signal: Signal,
         price: float,
         broken_wing: bool = False,
+        chain_strikes: set[float] | None = None,
     ) -> SpreadCandidate | None:
         w = self.config.butterfly_wing_width
 
         # Body (sold 2×) is the ATM strike, rounded to wing_width grid
-        atm = round(price / w) * w
+        atm = self._snap_to_chain(round(price / w) * w, chain_strikes) if chain_strikes else round(price / w) * w
 
         # Wings: symmetric for normal butterfly, asymmetric for broken-wing
         if broken_wing:
@@ -391,6 +401,10 @@ class SpreadBuilder:
         else:
             lower = atm - w
             upper = atm + w
+
+        if chain_strikes:
+            lower = self._snap_to_chain(lower, chain_strikes)
+            upper = self._snap_to_chain(upper, chain_strikes)
 
         strikes = sorted({lower, atm, upper})
         if len(strikes) < 3:
@@ -481,9 +495,10 @@ class SpreadBuilder:
             logger.warning("Could not find suitable near/far expiries for calendar on %s", symbol)
             return None
 
-        # ATM strike rounded to spread_width grid
+        # ATM strike rounded to spread_width grid, snapped to real chain strikes
         w = self.config.spread_width
-        atm = round(price / w) * w
+        chain_strikes = self._get_chain_strikes(chains)
+        atm = self._snap_to_chain(round(price / w) * w, chain_strikes) if chain_strikes else round(price / w) * w
 
         near_contracts = await self.market_data.get_option_chain_data(symbol, near_expiry, "C", [atm])
         far_contracts = await self.market_data.get_option_chain_data(symbol, far_expiry, "C", [atm])
@@ -630,7 +645,29 @@ class SpreadBuilder:
         exp_date = datetime.strptime(expiry, "%Y%m%d").date()
         return (exp_date - datetime.now().date()).days
 
-    def _get_strike_range(self, price: float, width: float) -> list[float]:
+    def _get_chain_strikes(self, chains: list) -> set[float]:
+        """Extract all valid strikes from option chain definitions."""
+        all_strikes: set[float] = set()
+        for chain in chains:
+            all_strikes.update(chain.strikes)
+        return all_strikes
+
+    def _snap_to_chain(self, target: float, chain_strikes: set[float]) -> float:
+        """Snap a target strike to the nearest valid chain strike."""
+        if not chain_strikes:
+            return target
+        return min(chain_strikes, key=lambda s: abs(s - target))
+
+    def _get_strike_range(
+        self, price: float, width: float, chain_strikes: set[float] | None = None,
+    ) -> list[float]:
+        if chain_strikes:
+            # Use actual strikes from the chain, filtered to a reasonable range around price
+            low = price - 10 * width
+            high = price + 10 * width
+            return sorted(s for s in chain_strikes if low <= s <= high)
+
+        # Fallback: generate synthetic strikes
         base = round(price)
         strikes: list[float] = []
         for i in range(-10, 11):
