@@ -4,7 +4,7 @@ import logging
 import uuid
 from datetime import datetime
 
-from ib_async import IB, Contract, LimitOrder, Trade
+from ib_async import IB, Contract, LimitOrder, TagValue, Trade
 
 from src.models import OrderStatus, SpreadCandidate, SpreadType, TradeRecord
 
@@ -46,7 +46,7 @@ class OrderManager:
             totalQuantity=contracts,
             lmtPrice=limit_price,
         )
-        order.smartComboRoutingParams = [{"tag": "NonGuaranteed", "value": "1"}]
+        order.smartComboRoutingParams = [TagValue("NonGuaranteed", "1")]
 
         trade_record = TradeRecord(
             trade_id=str(uuid.uuid4())[:8],
@@ -103,7 +103,7 @@ class OrderManager:
             totalQuantity=trade.contracts,
             lmtPrice=0.0,  # Will be updated with market price
         )
-        order.smartComboRoutingParams = [{"tag": "NonGuaranteed", "value": "1"}]
+        order.smartComboRoutingParams = [TagValue("NonGuaranteed", "1")]
 
         try:
             ib_trade = self.ib.placeOrder(contract, order)
