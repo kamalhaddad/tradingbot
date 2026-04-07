@@ -194,9 +194,14 @@ class TradingBot:
         """Check all open positions for exit conditions."""
         for trade in portfolio.open_trades:
             try:
-                # Get current spread value (would need market data for the combo)
-                # For now, use a simplified approach
-                current_value = trade.entry_price  # Placeholder
+                all_legs = [trade.long_leg, trade.short_leg] + list(trade.extra_legs)
+                current_value = await market_data.get_spread_value(all_legs)
+                if current_value is None:
+                    logger.warning(
+                        "Could not get spread value for %s (%s), skipping exit check",
+                        trade.symbol, trade.trade_id,
+                    )
+                    continue
 
                 should_exit, reason = risk_manager.check_exit_conditions(
                     trade, current_value

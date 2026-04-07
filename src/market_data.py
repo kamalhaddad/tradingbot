@@ -141,6 +141,44 @@ class MarketData:
         df["date"] = pd.to_datetime(df["date"])
         return pd.Series(df["close"].values, index=df["date"])
 
+    async def get_spread_value(self, legs: list) -> float | None:
+        """Get current mid-price value of a spread from its legs.
+
+        Each leg is an OptionLeg with symbol, expiry, strike, right, action, ratio.
+        Returns the net value (positive = debit to close, negative = credit to close).
+        """
+        if not legs:
+            return None
+
+        ib_options = [
+            Option(leg.symbol, leg.expiry, leg.strike, leg.right, "SMART")
+            for leg in legs
+        ]
+        qualified = await self.ib.qualifyContractsAsync(*ib_options)
+
+        tickers = []
+        for i, contract in enumerate(qualified):
+            if contract is None or contract.conId == 0:
+                return None
+            ticker = self.ib.reqMktData(contract, "", False, False)
+            tickers.append((legs[i], contract, ticker))
+
+        await asyncio.sleep(2)
+
+        net_value = 0.0
+        for leg, contract, ticker in tickers:
+            self.ib.cancelMktData(contract)
+            bid = ticker.bid if ticker.bid not in (None, -1) else None
+            ask = ticker.ask if ticker.ask not in (None, -1) else None
+            if bid is None or ask is None:
+                return None
+            mid = (bid + ask) / 2
+            # BUY legs are positive value, SELL legs are negative
+            sign = 1 if leg.action == "BUY" else -1
+            net_value += sign * mid * leg.ratio
+
+        return net_value
+
     async def get_account_value(self) -> float:
         """Get net liquidation value of the account."""
         account_values = self.ib.accountValues()
