@@ -19,6 +19,7 @@ class IBConnection:
         self._max_retries = 10
         self._base_delay = 5
         self._reconnecting = False
+        self._upstream_ready = True  # False when IB Gateway loses IBKR upstream
 
     async def connect(self) -> IB:
         """Connect to IB Gateway with exponential backoff retry."""
@@ -40,6 +41,8 @@ class IBConnection:
                     self.config.client_id,
                 )
                 self.ib.disconnectedEvent += self._on_disconnect
+                self.ib.errorEvent += self._on_error
+                self._upstream_ready = True
                 return self.ib
             except Exception as e:
                 delay = min(self._base_delay * (2 ** (attempt - 1)), 120)
@@ -55,6 +58,18 @@ class IBConnection:
                         f"Failed to connect after {self._max_retries} attempts"
                     ) from e
                 await asyncio.sleep(delay)
+
+    def _on_error(self, reqId: int, errorCode: int, errorString: str, contract):
+        """Track IB Gateway upstream connectivity via error codes."""
+        if errorCode == 1100:
+            # Gateway lost connection to IBKR servers
+            self._upstream_ready = False
+            logger.warning("IB Gateway lost upstream connectivity (error 1100)")
+        elif errorCode in (1101, 1102):
+            # 1101: connectivity restored, data lost
+            # 1102: connectivity restored, data maintained
+            self._upstream_ready = True
+            logger.info("IB Gateway upstream connectivity restored (error %d)", errorCode)
 
     def _on_disconnect(self):
         """Handle unexpected disconnection by scheduling reconnect."""
@@ -85,9 +100,11 @@ class IBConnection:
         """Gracefully disconnect from IB Gateway."""
         if self.ib.isConnected():
             self.ib.disconnectedEvent -= self._on_disconnect
+            self.ib.errorEvent -= self._on_error
             self.ib.disconnect()
             logger.info("Disconnected from IB Gateway")
 
     @property
     def is_connected(self) -> bool:
-        return self.ib.isConnected()
+        """True only when both the local socket and IBKR upstream are live."""
+        return self.ib.isConnected() and self._upstream_ready

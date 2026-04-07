@@ -97,22 +97,27 @@ class TradingBot:
             now = asyncio.get_event_loop().time()
 
             # Ensure we're connected before doing any work
-            if not ib.isConnected():
-                logger.warning("Not connected to IB Gateway, attempting reconnect...")
-                try:
-                    await self.conn.connect()
-                    logger.info("Reconnected successfully")
-                except ConnectionError:
-                    logger.error("Reconnect failed, will retry next cycle")
-                    # Wait before retrying to avoid tight loop
+            if not self.conn.is_connected:
+                if ib.isConnected() and not self.conn._upstream_ready:
+                    # Socket alive but IBKR upstream is down — just wait
+                    logger.warning("IB Gateway upstream is down, waiting for recovery...")
+                else:
+                    # Socket disconnected — need to reconnect
+                    logger.warning("Not connected to IB Gateway, attempting reconnect...")
                     try:
-                        await asyncio.wait_for(
-                            self._shutdown.wait(), timeout=30,
-                        )
-                        break
-                    except asyncio.TimeoutError:
-                        pass
-                    continue
+                        await self.conn.connect()
+                        logger.info("Reconnected successfully")
+                    except ConnectionError:
+                        logger.error("Reconnect failed, will retry next cycle")
+                # Wait before next check to avoid tight loop
+                try:
+                    await asyncio.wait_for(
+                        self._shutdown.wait(), timeout=30,
+                    )
+                    break
+                except asyncio.TimeoutError:
+                    pass
+                continue
 
             # Exit check (runs during market hours, every exit_interval)
             if scheduler.is_market_open() and (now - last_exit_check) >= exit_interval:
